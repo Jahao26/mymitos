@@ -1,30 +1,22 @@
 MIT6.S081 Operating Systems
 学习时间：2023.5.10 ~至今
 
-已完成时间：
+main branch include labs: lab1,lab2,lab3,lab4
 Lab1 - Unix utilities｜Unix 实用工具：
 目标简述： 实现几个用户态程序及 unix 实用工具，熟悉 xv6 的开发环境以及系统调用的使用。
-实验难度： 3 easy,  3 moderate
-
 
 Lab2 - System calls｜系统调用：
 目标简述： 添加 syscall 跟踪，以及添加新的系统调用 sysinfo，帮助加深对 xv6 内核的理解。
-实验难度： 2 moderate
-
 
 Lab3 - Page tables｜页表：
 目标简述： 探索页表，为每个进程维护独立的内核页表；修改页表以简化从用户态拷贝数据到内核态的方法。
 （难点：理解进程页表、内核页表概念）
-实验难度：  1 easy,2 hard
-
 
 Lab4 - Traps｜中断陷阱：
 目标简述： 探索中断以及中断处理机制（trap、trampoline、函数调用、现场保存、页表/特权切换、调用栈、栈指针及返回指针）
 （注：本 lab 并不非常难，重要的是理解 lecture5 与 lecture6 中的概念）
-实验难度： 1 easy,  1 moderate,  1 hard
 
-
-
+other branch:
 待完成实验：
 Lab5 - Lazy allocation｜内存页懒分配：
 目标简述： 实现内存页懒分配机制，在调用 sbrk() 的时候，不立即分配内存，而是只作记录。在访问到这一部分内存页并触发缺页异常的时候才进行实际的物理内存分配。
