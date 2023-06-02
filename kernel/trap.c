@@ -29,6 +29,37 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+// lazy allocation, stval store virtual address
+int
+lazy_alloc(uint64 addr) {
+  struct proc *p = myproc();
+  // page-faults on a virtual memory address higher than any allocated with sbrk()
+  // this should be >= not > !!!
+  if (addr >= p->sz) {
+    // printf("lazy_alloc: access invalid address");
+    return -1;
+  }
+
+  if (addr < p->trapframe->sp) {
+    // printf("lazy_alloc: access address below stack");
+    return -2;
+  }
+  
+  uint64 pa = PGROUNDDOWN(addr);
+  char* mem = kalloc();
+  if (mem == 0) {
+    // printf("lazy_alloc: kalloc failed");
+    return -3;
+  }
+  
+  memset(mem, 0, PGSIZE);
+  if(mappages(p->pagetable, pa, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+    kfree(mem);
+    return -4;
+  }
+  return 0;
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -65,19 +96,10 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if(r_scause() == 15) {
-      uint64 va = r_stval();
-      uint64 mem = (uint64) kalloc();
-      va = PGROUNDDOWN(va);
-      if(mem == 0) {
+  } else if(r_scause() == 15 || r_scause() == 13) {
+      uint64 addr = r_stval();
+      if (lazy_alloc(addr) < 0) {
         p->killed = 1;
-      } else {
-        memset((void*)mem, 0, PGSIZE);
-
-        if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-          kfree((void*)mem);
-          p->killed = 1;
-        }
       }
   } else if((which_dev = devintr()) != 0){
     // ok
