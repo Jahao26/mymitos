@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -70,7 +72,7 @@ kvminithart()
 //    0..11 -- 12 bits of byte offset within the page.
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
-{
+{ // 返回pagetable虚拟地址va对应的的PTE，最低级的pte项
   if(va >= MAXVA)
     panic("walk");
 
@@ -147,7 +149,7 @@ kvmpa(uint64 va)
 // allocate a needed page-table page.
 int
 mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
-{
+{ // 创建从va开始的指向pa的ptes
   uint64 a, last;
   pte_t *pte;
 
@@ -311,20 +313,27 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  // char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
+
+
     pa = PTE2PA(*pte);
+    *pte = (*pte) & (~PTE_W);  // 表示父子进程不可写
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    // if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+    //   kfree(mem);
+    //   goto err;
+    // }
+    krefinc(pa); // 对物理页pa的引用+1
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){// 映射父进程的物理地址到子进程中
       goto err;
     }
   }
@@ -355,12 +364,32 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
+  pte_t *pte;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
+    if (pa0 == 0) {
+    	return -1;
+    }
+	pte = walk(pagetable, va0, 0);
+    if (*pte & PTE_RSW)
+    {
+      // allocate a new page
+      uint64 ka = (uint64) kalloc(); // newly allocated physical address
+
+      if (ka == 0){
+      	struct proc *p = myproc();
+        p->killed = 1; // there's no free memory
+      } else {
+        memmove((char*)ka, (char*)pa0, PGSIZE); // copy the old page to the new page
+        uint flags = PTE_FLAGS(*pte);
+        uvmunmap(pagetable, va0, 1, 1);
+        *pte = PA2PTE(ka) | flags | PTE_W;
+        *pte &= ~PTE_RSW;
+        pa0 = ka;
+      }
+    } 
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -372,7 +401,6 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   }
   return 0;
 }
-
 // Copy from user to kernel.
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.

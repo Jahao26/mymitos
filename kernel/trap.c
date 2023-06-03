@@ -29,6 +29,33 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+// cow处理函数
+int
+cowhandler(pagetable_t pagetable, uint64 va)
+{
+  if (va >= MAXVA) 
+    return -1;
+  pte_t *pte;
+  pte = walk(pagetable, va, 0);
+  if (pte == 0) return -1;
+  if ((*pte & PTE_U) == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_RSW) == 0)
+    return -1;
+
+  // allocate a new page
+  uint64 pa = PTE2PA(*pte); // original physical address
+  uint64 ka = (uint64) kalloc(); // newly allocated physical address
+
+  if (ka == 0){
+    return -1;
+  } 
+  memmove((char*)ka, (char*)pa, PGSIZE); // copy the old page to the new page
+  kfree((void*)pa);//kfree old page
+  uint flags = PTE_FLAGS(*pte);
+  *pte = PA2PTE(ka) | flags | PTE_W; // 设置父子进程可写
+  *pte &= ~PTE_RSW;
+  return 0;
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -67,6 +94,14 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 15) {
+    // printf("cause by copy-write\n");
+    // 当COW页面出现页面错误时，使用kalloc（）分配一个新页面，
+    // 将旧页面复制到新页面，并在PTE_W设置的PTE中安装新页面，表示进程可写
+    if(cowhandler(p->pagetable, r_scause()) < 0) {
+      p->killed = 1;
+    }
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
